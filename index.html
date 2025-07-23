@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RF Propagation Map - Advanced</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js"></script>
+  <style>
+    #map { height: 500px; border-radius: 12px; }
+    .leaflet-container { background: #0f172a; }
+    body.dark { background-color: #0f172a; color: #e5e7eb; }
+    body.light { background-color: #f8fafc; color: #1e293b; }
+    /* Lightbox modal */
+	#helpModal {
+	  position: fixed;
+	  z-index: 9999; /* προσθήκη */
+	  transition: opacity 0.3s ease;
+	}
+  </style>
+</head>
+<body class="dark flex flex-col min-h-screen">
+  <!-- Header -->
+  <header class="p-4 bg-gray-800 dark:bg-gray-800 light:bg-gray-200 flex justify-between items-center flex-wrap gap-2">
+    <h1 class="text-2xl font-bold text-blue-400 flex-grow">Χάρτης Διάδοσης RF</h1>
+    <div class="flex items-center gap-4 flex-wrap">
+      <div id="utcClock" class="text-lg font-mono text-yellow-300"></div>
+      <button id="toggleMode" class="bg-gray-700 text-white px-4 py-2 rounded-lg whitespace-nowrap">Light Mode</button>
+      <button id="refreshBtn" class="bg-blue-500 hover:bg-blue-600 px-4 py-2 rounded-lg whitespace-nowrap">Ανανέωση</button>
+      <button id="helpBtn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg whitespace-nowrap">Βοήθεια</button>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main class="flex flex-col lg:flex-row flex-grow">
+    <!-- Solar Data -->
+    <aside class="w-full lg:w-1/3 p-4 bg-gray-800 dark:bg-gray-800 light:bg-gray-100 space-y-6">
+      <h2 class="text-xl font-semibold">Ηλιακά Δεδομένα</h2>
+      <div id="solarData" class="grid grid-cols-2 gap-4">
+        <div class="bg-gray-700 p-3 rounded-lg shadow-lg">
+          <p class="text-gray-400">SFI</p>
+          <p id="sfi" class="text-2xl font-bold text-yellow-400">--</p>
+        </div>
+        <div class="bg-gray-700 p-3 rounded-lg shadow-lg">
+          <p class="text-gray-400">Kp</p>
+          <p id="kp" class="text-2xl font-bold text-green-400">--</p>
+        </div>
+        <div class="bg-gray-700 p-3 rounded-lg shadow-lg">
+          <p class="text-gray-400">A Index</p>
+          <p id="aindex" class="text-2xl font-bold text-blue-400">--</p>
+        </div>
+        <div class="bg-gray-700 p-3 rounded-lg shadow-lg">
+          <p class="text-gray-400">SN</p>
+          <p id="sn" class="text-2xl font-bold text-pink-400">--</p>
+        </div>
+        <div class="bg-gray-700 p-3 rounded-lg shadow-lg">
+          <p class="text-gray-400">Solar Wind</p>
+          <p id="wind" class="text-2xl font-bold text-cyan-400">-- km/s</p>
+        </div>
+        <div class="bg-gray-700 p-3 rounded-lg shadow-lg">
+          <p class="text-gray-400">Bz</p>
+          <p id="bz" class="text-2xl font-bold text-red-400">-- nT</p>
+        </div>
+      </div>
+      <h2 class="text-xl font-semibold">Ζώνες HF</h2>
+      <ul class="list-disc list-inside text-gray-300">
+        <li><span class="text-blue-400">20m:</span> Ημέρα - DX</li>
+        <li><span class="text-green-400">40m:</span> Ημέρα/Νύχτα</li>
+        <li><span class="text-orange-400">80m:</span> Νύχτα - Τοπικά</li>
+      </ul>
+    </aside>
+
+    <!-- Map -->
+    <section class="flex-grow p-4">
+      <div id="map"></div>
+    </section>
+  </main>
+
+  <footer class="text-center p-4 text-gray-500">
+    Δεδομένα από HamQSL & NOAA | RF Propagation Map © 2025
+  </footer>
+
+  <!-- Lightbox Help Modal -->
+	<div id="helpModal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center opacity-0 pointer-events-none">
+	  <div class="bg-gray-900 text-gray-100 p-6 rounded-lg max-w-3xl max-h-[80vh] overflow-y-auto shadow-lg relative">
+      <button id="closeHelp" class="absolute top-3 right-3 text-gray-400 hover:text-white text-2xl font-bold" aria-label="Κλείσιμο">&times;</button>
+      <h2 class="text-2xl font-bold mb-4">Βοήθεια για τα Ηλιακά Δεδομένα</h2>
+      <p class="mb-3">
+        <strong>SFI (Solar Flux Index):</strong> Δείχνει την ηλιακή δραστηριότητα. Τιμές &gt; 100 δείχνουν καλή διάδοση στα HF.
+      </p>
+      <p class="mb-3">
+        <strong>Kp Index:</strong> Δείχνει τη γεωμαγνητική διαταραχή. Τιμές 0-2 είναι ήσυχες, 5+ σημαίνουν καταιγίδες που επηρεάζουν τη διάδοση.
+      </p>
+      <p class="mb-3">
+        <strong>A Index:</strong> Μετράει την αστάθεια του μαγνητικού πεδίου σε 24 ώρες. Χαμηλές τιμές (0-10) είναι καλές για διάδοση.
+      </p>
+      <p class="mb-3">
+        <strong>SN (Sunspot Number):</strong> Αριθμός ηλιακών κηλίδων. Υψηλές τιμές σημαίνουν αυξημένη ηλιακή δραστηριότητα και καλύτερη διάδοση.
+      </p>
+      <p class="mb-3">
+        <strong>Solar Wind:</strong> Ταχύτητα ηλιακού ανέμου σε km/s. Μεγάλη ταχύτητα (&gt; 500 km/s) μπορεί να προκαλέσει διαταραχές.
+      </p>
+      <p class="mb-3">
+        <strong>Bz:</strong> Συνιστώσα του μαγνητικού πεδίου του ηλιακού ανέμου. Αρνητικές τιμές (π.χ. κάτω από -5) μπορεί να προκαλέσουν γεωμαγνητικές καταιγίδες.
+      </p>
+      <p>
+        Η κατανόηση αυτών των τιμών βοηθά στην πρόβλεψη της ποιότητας της ραδιοεπικοινωνίας HF.
+      </p>
+<h2 class="text-2xl font-bold mt-6 mb-4">Ζώνες HF</h2>
+<ul class="list-disc list-inside text-gray-300 mb-4">
+  <li><strong>20m:</strong> Ημέρα - DX (μακρινές επικοινωνίες)</li>
+  <li><strong>40m:</strong> Ημέρα/Νύχτα - Μεσαίες αποστάσεις</li>
+  <li><strong>80m:</strong> Νύχτα - Τοπικές επικοινωνίες</li>
+</ul>
+    <p class="mt-4">
+      <strong>Σημείωση για τις Ζώνες HF:</strong><br />
+      Οι τιμές 20m, 40m, 80m είναι μήκη κύματος (σε μέτρα) που αντιστοιχούν περίπου σε συχνότητες:<br />
+      20m ≈ 14 MHz, 40m ≈ 7 MHz, 80m ≈ 3.5 MHz.<br />
+      Αυτά τα εύρη χρησιμοποιούνται από ραδιοερασιτέχνες για επικοινωνίες HF.
+    </p>
+<p>
+  Αυτές οι ζώνες υποδεικνύουν τις πιο κατάλληλες ώρες και συνθήκες για επικοινωνία σε κάθε HF band, βασισμένες στην ηλιακή δραστηριότητα και διάδοση.
+</p>
+    </div>
+  </div>
+
+  <script>
+    // Leaflet Map Setup
+    const map = L.map('map').setView([20, 0], 2);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    // Heatmap simulation
+    const points = [];
+    for (let i = 0; i < 200; i++) {
+      points.push([
+        (Math.random() * 180) - 90, // lat
+        (Math.random() * 360) - 180, // lon
+        Math.random()
+      ]);
+    }
+    L.heatLayer(points, { radius: 25, blur: 15, maxZoom: 4 }).addTo(map);
+
+    // Grayline (day/night overlay approximation)
+    let graylineLayer;
+    function updateGrayline() {
+      if (graylineLayer) map.removeLayer(graylineLayer);
+      const date = new Date();
+      const sunPosition = (date.getUTCHours() / 24) * 360;
+      graylineLayer = L.rectangle([[-90, sunPosition - 90], [90, sunPosition + 90]], {
+        color: 'black', weight: 0, fillOpacity: 0.3
+      }).addTo(map);
+    }
+    updateGrayline();
+    setInterval(updateGrayline, 60000);
+
+    // UTC Clock
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('utcClock').textContent = now.toUTCString().slice(17, 25) + " UTC";
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // Theme toggle
+    const toggleMode = document.getElementById('toggleMode');
+    toggleMode.addEventListener('click', () => {
+      if(document.body.classList.contains('dark')) {
+        document.body.classList.replace('dark', 'light');
+        toggleMode.textContent = 'Dark Mode';
+      } else {
+        document.body.classList.replace('light', 'dark');
+        toggleMode.textContent = 'Light Mode';
+      }
+    });
+
+    // Fetch Solar Data from proxy API
+    async function fetchSolarData() {
+      try {
+        const res = await fetch('https://api.allorigins.win/raw?url=https://www.hamqsl.com/solarxml.php');
+        const text = await res.text();
+        const parser = new DOMParser();
+        const xml = parser.parseFromString(text, 'application/xml');
+
+        if (xml.querySelector('parsererror')) {
+          console.error('XML parsing error');
+          return;
+        }
+
+        const solarflux = xml.getElementsByTagName('solarflux')[0];
+        const kindex = xml.getElementsByTagName('kindex')[0];
+        const aindex = xml.getElementsByTagName('aindex')[0];
+        const sunspots = xml.getElementsByTagName('sunspots')[0];
+        const solarwind = xml.getElementsByTagName('solarwind')[0];
+        const bz = xml.getElementsByTagName('bz')[0];
+
+        document.getElementById('sfi').textContent = solarflux ? solarflux.textContent : '--';
+        document.getElementById('kp').textContent = kindex ? kindex.textContent : '--';
+        document.getElementById('aindex').textContent = aindex ? aindex.textContent : '--';
+        document.getElementById('sn').textContent = sunspots ? sunspots.textContent : '--';
+        document.getElementById('wind').textContent = solarwind ? solarwind.textContent + ' km/s' : '-- km/s';
+        document.getElementById('bz').textContent = bz ? bz.textContent + ' nT' : '-- nT';
+
+      } catch (err) {
+        console.error('Σφάλμα φόρτωσης:', err);
+      }
+    }
+    fetchSolarData();
+    setInterval(fetchSolarData, 300000); // κάθε 5 λεπτά
+
+    // Refresh button reloads solar data and map points (simulate)
+    const refreshBtn = document.getElementById('refreshBtn');
+    refreshBtn.addEventListener('click', () => {
+      fetchSolarData();
+      // Ανανεώνουμε heatmap τυχαία (για demo)
+      const newPoints = [];
+      for (let i = 0; i < 200; i++) {
+        newPoints.push([
+          (Math.random() * 180) - 90,
+          (Math.random() * 360) - 180,
+          Math.random()
+        ]);
+      }
+      map.eachLayer(layer => {
+        if (layer instanceof L.HeatLayer) map.removeLayer(layer);
+      });
+      L.heatLayer(newPoints, { radius: 25, blur: 15, maxZoom: 4 }).addTo(map);
+    });
+
+    // Help Modal Logic
+    const helpBtn = document.getElementById('helpBtn');
+    const helpModal = document.getElementById('helpModal');
+    const closeHelp = document.getElementById('closeHelp');
+
+    helpBtn.addEventListener('click', () => {
+      helpModal.classList.remove('opacity-0', 'pointer-events-none');
+    });
+
+    closeHelp.addEventListener('click', () => {
+      helpModal.classList.add('opacity-0', 'pointer-events-none');
+    });
+
+    helpModal.addEventListener('click', (e) => {
+      if (e.target === helpModal) {
+        helpModal.classList.add('opacity-0', 'pointer-events-none');
+      }
+    });
+  </script>
+</body>
+</html>
